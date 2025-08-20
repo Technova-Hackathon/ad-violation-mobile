@@ -1,15 +1,8 @@
-import { View, Text, StyleSheet } from "react-native";
+import ReportsScreen from "D:/HACKATHON/ad-violation-project/ad-violation-mobile/screens/ReportScreen";
 
-export default function ReportsScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Reports</Text>
-      <Text>Your past violation reports will appear here.</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 20, fontWeight: "bold", marginBottom: 10 },
-});
+// ...
+<Tabs.Screen
+  name="reports"
+  options={{ title: "Reports", tabBarIcon: ({ color }) => <Ionicons name="list" color={color} size={20} /> }}
+  component={ReportsScreen}
+/>

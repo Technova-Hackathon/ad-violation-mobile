@@ -13,6 +13,7 @@ import { Camera, CameraType } from "expo-camera";
 import * as Location from "expo-location";
 import { useIsFocused } from "@react-navigation/native";
 import API_BASE_URL from "../utils/api";
+import { supabase } from "../utils/supabase";
 
 export default function CameraScreen() {
   // -------------------- Permissions & Camera Setup --------------------
@@ -69,6 +70,50 @@ export default function CameraScreen() {
     }
   };
 
+  // -------------------- Upload to Supabase --------------------
+  async function uploadToSupabase(photoUri: string, coords: any, address: string) {
+    try {
+      const fileExt = "jpg";
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `reports/${fileName}`;
+
+      // Convert image to blob
+      const response = await fetch(photoUri);
+      const blob = await response.blob();
+
+      // Upload to Supabase Storage
+      const { error: storageError } = await supabase.storage
+        .from("reports")
+        .upload(filePath, blob, { contentType: "image/jpeg" });
+
+      if (storageError) throw storageError;
+
+      // Get public URL
+      const { data: publicUrl } = supabase.storage
+        .from("reports")
+        .getPublicUrl(filePath);
+
+      // Insert into reports table
+      const { error } = await supabase.from("reports").insert([
+        {
+          image_url: publicUrl.publicUrl,
+          lat: coords.latitude,
+          lon: coords.longitude,
+          address,
+          status: "pending",
+        },
+      ]);
+
+      if (error) throw error;
+
+      console.log("✅ Uploaded report to Supabase:", publicUrl.publicUrl);
+      return publicUrl.publicUrl;
+    } catch (err) {
+      console.error("❌ Supabase upload failed:", err);
+      return null;
+    }
+  }
+
   // -------------------- Capture + Upload --------------------
   const takePicture = async () => {
     if (isUploading || !cameraRef.current || !isCameraReady) return;
@@ -118,7 +163,10 @@ export default function CameraScreen() {
         console.warn("⚠️ Reverse geocoding failed:", geoErr);
       }
 
-      // 📤 Prepare FormData
+      // 🚀 Send to backend (ML check via FastAPI)
+      const controller = new AbortController();
+      setAbortController(controller);
+
       const formData = new FormData();
       formData.append("image", {
         uri: photo.uri,
@@ -127,10 +175,6 @@ export default function CameraScreen() {
       } as any);
       formData.append("lat", coords.latitude.toString());
       formData.append("lon", coords.longitude.toString());
-
-      // 🚀 Send to backend with cancel option
-      const controller = new AbortController();
-      setAbortController(controller);
 
       const res = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
@@ -142,7 +186,11 @@ export default function CameraScreen() {
       const data = await res.json();
       console.log("✅ Backend response:", data);
 
-      setResultData({ ...data, photoUri: photo.uri, address });
+      // 📤 Also save to Supabase
+      const supabaseUrl = await uploadToSupabase(photo.uri, coords, address);
+
+      // 🎉 Show result modal
+      setResultData({ ...data, photoUri: photo.uri, address, supabaseUrl });
       setResultModalVisible(true);
     } catch (err: any) {
       if (err.name === "AbortError") {
@@ -163,9 +211,7 @@ export default function CameraScreen() {
 
   // -------------------- Cancel Upload --------------------
   const cancelUpload = () => {
-    if (abortController) {
-      abortController.abort();
-    }
+    if (abortController) abortController.abort();
     setIsUploading(false);
   };
 
@@ -237,7 +283,7 @@ export default function CameraScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {resultData?.status === "success"
-                ? "✅ Issue Reported"
+                ? "✅ Violation Reported"
                 : "⚠️ Upload Failed"}
             </Text>
             {resultData?.photoUri && (
@@ -256,6 +302,9 @@ export default function CameraScreen() {
             )}
             {resultData?.address && (
               <Text style={styles.modalText}>🏠 {resultData.address}</Text>
+            )}
+            {resultData?.supabaseUrl && (
+              <Text style={styles.modalText}>☁️ Stored in Supabase</Text>
             )}
             <TouchableOpacity
               style={styles.closeButton}
@@ -287,7 +336,6 @@ const styles = StyleSheet.create({
   text: { fontSize: 18, color: "white" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  // 🔄 Spinner overlay
   overlay: {
     position: "absolute",
     top: 0,
@@ -299,7 +347,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   overlayText: { marginTop: 10, color: "white", fontSize: 16 },
-
   cancelButton: {
     marginTop: 15,
     backgroundColor: "#FF3B30",
@@ -309,7 +356,6 @@ const styles = StyleSheet.create({
   },
   cancelText: { color: "white", fontWeight: "600", fontSize: 16 },
 
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
