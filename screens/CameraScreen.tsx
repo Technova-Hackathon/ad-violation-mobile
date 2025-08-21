@@ -8,19 +8,20 @@ import {
   Modal,
   Image,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Camera, CameraType } from "expo-camera";
 import * as Location from "expo-location";
 import { useIsFocused } from "@react-navigation/native";
 import API_BASE_URL from "../utils/api";
 import { supabase } from "../utils/supabase";
+import * as FileSystem from "expo-file-system";
+import { decode as atob } from "base-64";
 
 export default function CameraScreen() {
   // -------------------- Permissions & Camera Setup --------------------
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [locationPermission, setLocationPermission] = useState<boolean | null>(
-    null
-  );
+  const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [ratio, setRatio] = useState("9:16");
   const cameraRef = useRef<Camera | null>(null);
@@ -29,8 +30,7 @@ export default function CameraScreen() {
 
   // -------------------- State Flags --------------------
   const [isUploading, setIsUploading] = useState(false);
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // -------------------- Result Modal --------------------
   const [resultModalVisible, setResultModalVisible] = useState(false);
@@ -39,18 +39,14 @@ export default function CameraScreen() {
   // -------------------- Ask Permissions on Mount --------------------
   useEffect(() => {
     (async () => {
-      const { status: camStatus } =
-        await Camera.requestCameraPermissionsAsync();
+      const { status: camStatus } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(camStatus === "granted");
 
-      const { status: locStatus } =
-        await Location.requestForegroundPermissionsAsync();
+      const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
       setLocationPermission(locStatus === "granted");
 
       if (locStatus === "granted") {
-        await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Low,
-        });
+        await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
         console.log("✅ GPS primed at startup");
       }
     })();
@@ -63,9 +59,7 @@ export default function CameraScreen() {
     if (cameraRef.current) {
       const supportedRatios = await cameraRef.current.getSupportedRatiosAsync();
       setRatio(
-        supportedRatios.includes("9:16")
-          ? "9:16"
-          : supportedRatios[0] || "9:16"
+        supportedRatios.includes("9:16") ? "9:16" : supportedRatios[0] || "9:16"
       );
     }
   };
@@ -77,14 +71,16 @@ export default function CameraScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `reports/${fileName}`;
 
-      // Convert image to blob
-      const response = await fetch(photoUri);
-      const blob = await response.blob();
+      // Convert image to base64 → Uint8Array
+      const base64 = await FileSystem.readAsStringAsync(photoUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const buffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 
       // Upload to Supabase Storage
       const { error: storageError } = await supabase.storage
         .from("reports")
-        .upload(filePath, blob, { contentType: "image/jpeg" });
+        .upload(filePath, buffer, { contentType: "image/jpeg" });
 
       if (storageError) throw storageError;
 
@@ -134,7 +130,6 @@ export default function CameraScreen() {
             latitude: lastKnown.coords.latitude,
             longitude: lastKnown.coords.longitude,
           };
-          console.log("✅ Using cached location:", coords);
         } else {
           const loc = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Low,
@@ -143,7 +138,6 @@ export default function CameraScreen() {
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
           };
-          console.log("✅ Fresh GPS location:", coords);
         }
       } catch (locErr) {
         console.warn("⚠️ Location fetch failed:", locErr);
@@ -155,9 +149,8 @@ export default function CameraScreen() {
         const places = await Location.reverseGeocodeAsync(coords);
         if (places.length > 0) {
           const place = places[0];
-          address = `${place.street || ""}, ${place.city || ""}, ${
-            place.region || ""
-          }, ${place.country || ""}`;
+          address = `${place.street || ""}, ${place.city || ""}, ${place.region || ""
+            }, ${place.country || ""}`;
         }
       } catch (geoErr) {
         console.warn("⚠️ Reverse geocoding failed:", geoErr);
@@ -168,11 +161,7 @@ export default function CameraScreen() {
       setAbortController(controller);
 
       const formData = new FormData();
-      formData.append("image", {
-        uri: photo.uri,
-        type: "image/jpeg",
-        name: "photo.jpg",
-      } as any);
+      formData.append("image_url", photo.uri); // sending image URL
       formData.append("lat", coords.latitude.toString());
       formData.append("lon", coords.longitude.toString());
 
@@ -190,7 +179,15 @@ export default function CameraScreen() {
       const supabaseUrl = await uploadToSupabase(photo.uri, coords, address);
 
       // 🎉 Show result modal
-      setResultData({ ...data, photoUri: photo.uri, address, supabaseUrl });
+      setResultData({
+        status: data?.status || (supabaseUrl ? "success" : "error"),  // ✅ fallback
+        message: data?.message || (supabaseUrl ? "Report stored in Supabase" : "Upload failed"),
+        photoUri: photo.uri,
+        address,
+        supabaseUrl,
+        lat: coords.latitude,
+        lon: coords.longitude,
+      });
       setResultModalVisible(true);
     } catch (err: any) {
       if (err.name === "AbortError") {
@@ -217,17 +214,9 @@ export default function CameraScreen() {
 
   // -------------------- Permission Checks --------------------
   if (hasPermission === null)
-    return (
-      <View style={styles.center}>
-        <Text>Requesting camera permissions...</Text>
-      </View>
-    );
+    return <View style={styles.center}><Text>Requesting camera permissions...</Text></View>;
   if (hasPermission === false)
-    return (
-      <View style={styles.center}>
-        <Text>No access to camera</Text>
-      </View>
-    );
+    return <View style={styles.center}><Text>No access to camera</Text></View>;
 
   // -------------------- Camera Layout --------------------
   const [w, h] = ratio.split(":").map(Number);
@@ -250,15 +239,13 @@ export default function CameraScreen() {
               disabled={isUploading}
             >
               <Text style={styles.text}>
-                {isUploading ? "⏳ Uploading..." : "📸 Capture"}
+                {"📸 Capture"}
               </Text>
             </TouchableOpacity>
           </View>
         </Camera>
       ) : (
-        <View style={styles.center}>
-          <Text>Camera paused</Text>
-        </View>
+        <View style={styles.center}><Text>Camera paused</Text></View>
       )}
 
       {/* 🔄 Uploading Overlay */}
@@ -283,7 +270,7 @@ export default function CameraScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {resultData?.status === "success"
-                ? "✅ Violation Reported"
+                ? "✅ Issue Reported"
                 : "⚠️ Upload Failed"}
             </Text>
             {resultData?.photoUri && (
