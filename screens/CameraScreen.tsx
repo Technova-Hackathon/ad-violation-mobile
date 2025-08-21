@@ -177,11 +177,14 @@ export default function CameraScreen() {
 
       // 📤 Also save to Supabase
       const supabaseUrl = await uploadToSupabase(photo.uri, coords, address);
+      const { data: userResp } = await supabase.auth.getUser();
+const userId = userResp?.user?.id ?? null;
 
       // 🎉 Show result modal
       setResultData({
         status: data?.status || (supabaseUrl ? "success" : "error"),  // ✅ fallback
         message: data?.message || (supabaseUrl ? "Report stored in Supabase" : "Upload failed"),
+        user_id: userId,
         photoUri: photo.uri,
         address,
         supabaseUrl,
@@ -279,9 +282,12 @@ export default function CameraScreen() {
                 style={styles.previewImage}
               />
             )}
-            <Text style={styles.modalText}>
+            {/*<Text style={styles.modalText}>
               {resultData?.message || "No message available"}
-            </Text>
+            </Text>*/}
+            {resultData?.user_id && (
+              <Text style={styles.modalText}> {resultData.user_id}</Text>
+            )}
             {resultData?.lat && resultData?.lon && (
               <Text style={styles.modalText}>
                 📍 {resultData.lat}, {resultData.lon}
@@ -291,7 +297,7 @@ export default function CameraScreen() {
               <Text style={styles.modalText}>🏠 {resultData.address}</Text>
             )}
             {resultData?.supabaseUrl && (
-              <Text style={styles.modalText}>☁️ Stored in Supabase</Text>
+              <Text style={styles.modalText}>☁️ We Will Get in Touch with the Report</Text>
             )}
             <TouchableOpacity
               style={styles.closeButton}
