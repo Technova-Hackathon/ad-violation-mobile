@@ -15,6 +15,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { BarCodeScanner } from "expo-barcode-scanner";
 import * as FileSystem from "expo-file-system";
 import { decode as atob } from "base-64";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import API_BASE_URL from "../utils/api";
 import { supabase } from "../utils/supabase";
@@ -66,10 +67,13 @@ export default function CameraScreen() {
   const [qrPerm, setQrPerm] = useState<boolean | null>(null);
 
   const [isCameraReady, setIsCameraReady] = useState(false);
-  const [ratio, setRatio] = useState("9:16");
+  const [ratio, setRatio] = useState("16:9"); // 👈 Changed to a widescreen ratio
   const cameraRef = useRef<Camera | null>(null);
+  const screenHeight = Dimensions.get("window").height;
   const screenWidth = Dimensions.get("window").width;
   const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
+
 
   // -------------------- State Flags --------------------
   const [isUploading, setIsUploading] = useState(false);
@@ -106,14 +110,14 @@ export default function CameraScreen() {
 
   // -------------------- Camera Ready Handler --------------------
   const onCameraReady = async () => {
-  if (cameraRef.current) {
-    const supportedRatios = await cameraRef.current.getSupportedRatiosAsync();
-    setRatio(supportedRatios.includes("9:16") ? "9:16" : supportedRatios[0] || "9:16");
-  }
-  setIsCameraReady(true);
-};
-
-
+    if (cameraRef.current) {
+      const supportedRatios = await cameraRef.current.getSupportedRatiosAsync();
+      // Use the first ratio that is widescreen or fall back to the first supported ratio.
+      const selectedRatio = supportedRatios.includes("16:9") ? "16:9" : supportedRatios[0];
+      setRatio(selectedRatio);
+    }
+    setIsCameraReady(true);
+  };
 
   // -------------------- Upload + Insert to Supabase --------------------
   // Returns { url, id } for the inserted row, or nulls on failure
@@ -182,8 +186,21 @@ export default function CameraScreen() {
     setIsUploading(true);
 
     try {
-      // 1) Capture
-      const photo = await cameraRef.current.takePictureAsync();
+      // 1) Capture with a delay to avoid the auto-focus issue
+      const photo = await new Promise<any>((resolve, reject) => {
+        setTimeout(async () => {
+          try {
+            if (cameraRef.current) {
+              const photoData = await cameraRef.current.takePictureAsync();
+              resolve(photoData);
+            } else {
+              reject("Camera not ready");
+            }
+          } catch (e) {
+            reject(e);
+          }
+        }, 200); // 👈 Added a 200ms delay
+      });
       console.log("✅ Captured:", photo.uri);
 
       // 2) Location with cached fallback
@@ -338,62 +355,59 @@ export default function CameraScreen() {
     );
 
   // -------------------- Camera Layout --------------------
-const [w, h] = ratio.split(":").map(Number);
-const cameraHeight = (screenWidth * h) / w;
+  return (
+    <View style={styles.container}>
+      {isFocused ? (
+        <Camera
+          style={StyleSheet.absoluteFillObject} // 👈 Use this to make the camera fill the screen
+          type={CameraType.back}
+          ratio={ratio}
+          ref={cameraRef}
+          onCameraReady={onCameraReady}
+        >
+          {/* QR overlay */}
+          {qrPerm && (
+            <View
+              style={{
+                position: "absolute",
+                top: insets.top + 20, // 👈 Use insets to avoid the notch
+                alignSelf: "center",
+                width: 220,
+                height: 120,
+                overflow: "hidden",
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.4)",
+                backgroundColor: "rgba(0,0,0,0.15)",
+              }}
+            >
+              <BarCodeScanner
+                style={{ width: "100%", height: "100%" }}
+                onBarCodeScanned={onBarCodeScanned}
+              />
+            </View>
+          )}
 
-return (
-  <View style={styles.container}>
-    {isFocused ? (
-      <Camera
-        style={{ width: screenWidth, height: cameraHeight }}
-        type={CameraType.back}
-        ratio={ratio}   // 👈 keep ratio consistent
-        ref={cameraRef}
-        onCameraReady={onCameraReady}
-      >
-        {/* QR overlay */}
-        {qrPerm && (
-          <View
-            style={{
-              position: "absolute",
-              bottom: 110,
-              alignSelf: "center",
-              width: 220,
-              height: 120,
-              overflow: "hidden",
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.4)",
-              backgroundColor: "rgba(0,0,0,0.15)",
-            }}
-          >
-            <BarCodeScanner
-              style={{ width: "100%", height: "100%" }}
-              onBarCodeScanned={onBarCodeScanned}
-            />
+          {/* Capture button */}
+          <View style={[styles.buttonContainer, { bottom: insets.bottom + 20 }]}>
+            <TouchableOpacity
+              style={[styles.button, isUploading && { backgroundColor: "gray" }]}
+              onPress={takePicture}
+              disabled={isUploading}
+            >
+              <Text style={styles.text}>📸 Capture</Text>
+            </TouchableOpacity>
           </View>
-        )}
-
-        {/* Capture button */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, isUploading && { backgroundColor: "gray" }]}
-            onPress={takePicture}
-            disabled={isUploading}
-          >
-            <Text style={styles.text}>📸 Capture</Text>
-          </TouchableOpacity>
+        </Camera>
+      ) : (
+        <View style={styles.center}>
+          <Text>Camera paused</Text>
         </View>
-      </Camera>
-    ) : (
-      <View style={styles.center}>
-        <Text>Camera paused</Text>
-      </View>
-    )}
-    {/* 🔄 Uploading Overlay */}
-    {isUploading && (
-      <View style={styles.overlay}>
-        <ActivityIndicator size="large" color="#fff" />
+      )}
+      {/* 🔄 Uploading Overlay */}
+      {isUploading && (
+        <View style={styles.overlay}>
+          <ActivityIndicator size="large" color="#fff" />
           <Text style={styles.overlayText}>Uploading...</Text>
           <TouchableOpacity style={styles.cancelButton} onPress={cancelUpload}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -422,12 +436,15 @@ return (
               <Image source={{ uri: resultData.photoUri }} style={styles.previewImage} />
             )}
 
-            {resultData?.message && (
-              <Text style={styles.modalText}>{resultData.message}</Text>
-            )}
+            {/* Display violations as a list */}
+            {resultData?.message && resultData.message.split('; ').map((msg: string, index: number) => (
+              <Text key={index} style={styles.modalText}>
+                {msg.trim()}
+              </Text>
+            ))}
 
             {resultData?.user_id && (
-              <Text style={styles.modalText}>{resultData.user_id}</Text>
+              <Text style={styles.modalText}>User ID: {resultData.user_id}</Text>
             )}
 
             {resultData?.lat != null && resultData?.lon != null && (

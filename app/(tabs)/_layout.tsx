@@ -24,7 +24,7 @@ export default function TabLayout() {
         tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "camera" : "camera-outline"}
-              size={size ?? 22}
+              size={size ?? 50}
               color={color}
             />
           ),
