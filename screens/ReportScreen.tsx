@@ -161,7 +161,11 @@ export default function ReportsScreen() {
 function Thumb({ uri }: { uri: string | null }) {
   const [errored, setErrored] = useState(false);
   if (!uri || errored) {
-    return <View style={styles.thumbFallback} />;
+    return (
+      <View style={styles.thumbFallback}>
+        <Text style={{ textAlign: 'center' }}>📷</Text>
+      </View>
+    );
   }
   return (
     <Image
@@ -173,12 +177,14 @@ function Thumb({ uri }: { uri: string | null }) {
   );
 }
 
+
 function statusLabel(s?: string | null) {
   const map: Record<string, string> = {
     pending: "⏳ Pending",
     success: "✅ Success",
     warning: "⚠️ Warning",
     error: "⛔ Error",
+    violation: "🚫 Violation",
   };
   return map[s ?? "pending"] ?? "⏳ Pending";
 }
@@ -199,6 +205,7 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 8,
     backgroundColor: "#e5e7eb",
+    resizeMode: "cover",
   },
   thumbFallback: {
     width: 80,
