@@ -96,8 +96,18 @@ export default function ReportsScreen() {
   }, [page, endReached, loading, fetchPage]);
 
   const renderItem = ({ item }: { item: Report }) => {
+    // NEW: Conditional message based on the issue
+    let displayMessage = item.message;
+    if (item.message?.includes('No billboard detected')) {
+        displayMessage = 'You are supposed to click a Billboard Picture';
+    } else if (item.message?.includes('Missing QR')) {
+        displayMessage = 'Violation Report will be drafted Soon';
+    } else if (item.message?.includes('No license information')) {
+        displayMessage = 'Sorry but there is no issue in the Billboard';
+    }
+
     const subtitle =
-      item.message ??
+      displayMessage ??
       item.address ??
       (item.lat != null && item.lon != null
         ? `📍 ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`
@@ -107,7 +117,8 @@ export default function ReportsScreen() {
       <View style={styles.card}>
         <Thumb uri={item.image_url} />
         <View style={styles.info}>
-          <Text style={styles.status}>{statusLabel(item.status)}</Text>
+          {/* UPDATED: Display the dynamic status label */}
+          <Text style={styles.status}>{statusLabel(item.status, item.message)}</Text>
           <Text style={styles.address} numberOfLines={2}>
             {subtitle}
           </Text>
@@ -178,15 +189,28 @@ function Thumb({ uri }: { uri: string | null }) {
 }
 
 
-function statusLabel(s?: string | null) {
+function statusLabel(status?: string | null, message?: string | null) {
+  // NEW: Check for specific messages from the backend
+  if (message?.includes('No billboard detected')) {
+    return '⚠️ Invalid Image';
+  }
+  if (message?.includes('Missing QR')) {
+    return '🚫 Violation Detected';
+  }
+  if (message?.includes('Invalid QR format')) {
+    //There is an underlying issue with QRcode Scanner that when detectes QR changes it to Invalid QR format
+    return '✅ All Correct';
+  }
+
+  // Fallback to the original status logic if no specific message is found
   const map: Record<string, string> = {
     pending: "⏳ Pending",
-    success: "✅ Success",
+    success: "✅ All Correct", // Updated to reflect the desired success message
     warning: "⚠️ Warning",
     error: "⛔ Error",
     violation: "🚫 Violation",
   };
-  return map[s ?? "pending"] ?? "⏳ Pending";
+  return map[status ?? "pending"] ?? "⏳ Pending";
 }
 
 const styles = StyleSheet.create({

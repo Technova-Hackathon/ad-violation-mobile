@@ -12,24 +12,21 @@ import {
 import { Camera, CameraType } from "expo-camera";
 import * as Location from "expo-location";
 import { useIsFocused } from "@react-navigation/native";
-import { BarCodeScanner } from "expo-barcode-scanner";
 import * as FileSystem from "expo-file-system";
 import { decode as atob } from "base-64";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons"; // Import Ionicons
 
 import API_BASE_URL from "../utils/api";
 import { supabase } from "../utils/supabase";
 
 type Coords = { latitude: number; longitude: number };
 
-// -------------------- Geofence + Time Window CONFIG --------------------
-// Fill these with your actual venue/time window
-const GEOFENCE_CENTER = { lat: 12.9716, lon: 77.5946 }; // example: Bengaluru center
+// -------------------- Geofence CONFIG --------------------
+const GEOFENCE_CENTER = { lat: 20.2961, lon: 85.8245 }; // Approximate: Bhubaneswar, Odisha
 const GEOFENCE_RADIUS_M = 150; // meters
-const WINDOW_START_ISO = "2025-08-22T08:00:00Z";
-const WINDOW_END_ISO = "2025-08-22T18:00:00Z";
 
-// -------------------- Helpers: distance/time checks --------------------
+// -------------------- Helpers: distance checks --------------------
 function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
   const R = 6371000;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -52,28 +49,13 @@ function checkGeofence(user: { latitude: number; longitude: number }) {
     : { ok: false as const, reason: "Out of allowed zone" };
 }
 
-function checkTimeWindow(now = new Date()) {
-  const start = new Date(WINDOW_START_ISO);
-  const end = new Date(WINDOW_END_ISO);
-  return now >= start && now <= end
-    ? { ok: true as const }
-    : { ok: false as const, reason: "Outside allowed time" };
-}
-
 export default function CameraScreen() {
   // -------------------- Permissions & Camera Setup --------------------
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
-  const [qrPerm, setQrPerm] = useState<boolean | null>(null);
-
   const [isCameraReady, setIsCameraReady] = useState(false);
-  const [ratio, setRatio] = useState("16:9"); // 👈 Changed to a widescreen ratio
   const cameraRef = useRef<Camera | null>(null);
-  const screenHeight = Dimensions.get("window").height;
-  const screenWidth = Dimensions.get("window").width;
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-
 
   // -------------------- State Flags --------------------
   const [isUploading, setIsUploading] = useState(false);
@@ -83,23 +65,31 @@ export default function CameraScreen() {
   const [resultModalVisible, setResultModalVisible] = useState(false);
   const [resultData, setResultData] = useState<any>(null);
 
-  // -------------------- QR Scanner --------------------
+  // -------------------- QR Scanner (from your new code) --------------------
+  const [scanEnabled, setScanEnabled] = useState(true);
   const [qrValue, setQrValue] = useState<string | null>(null);
+  const [scanModalVisible, setScanModalVisible] = useState(false);
+
   const onBarCodeScanned = ({ data }: { data: string }) => {
+    if (!scanEnabled) return;
+
+    setScanEnabled(false); // Disable further scans
     setQrValue(data);
+    setScanModalVisible(true);
+
+    // Re-enable scanning after 3 seconds and hide the popup
+    setTimeout(() => {
+      setScanModalVisible(false);
+      setScanEnabled(true);
+    }, 3000);
   };
 
   // -------------------- Ask Permissions on Mount --------------------
   useEffect(() => {
     (async () => {
       const { status: camStatus } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(camStatus === "granted");
-
       const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
-      setLocationPermission(locStatus === "granted");
-
-      const { status: qrStatus } = await BarCodeScanner.requestPermissionsAsync();
-      setQrPerm(qrStatus === "granted");
+      setHasPermission(camStatus === "granted" && locStatus === "granted");
 
       if (locStatus === "granted") {
         await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
@@ -108,19 +98,7 @@ export default function CameraScreen() {
     })();
   }, []);
 
-  // -------------------- Camera Ready Handler --------------------
-  const onCameraReady = async () => {
-    if (cameraRef.current) {
-      const supportedRatios = await cameraRef.current.getSupportedRatiosAsync();
-      // Use the first ratio that is widescreen or fall back to the first supported ratio.
-      const selectedRatio = supportedRatios.includes("16:9") ? "16:9" : supportedRatios[0];
-      setRatio(selectedRatio);
-    }
-    setIsCameraReady(true);
-  };
-
-  // -------------------- Upload + Insert to Supabase --------------------
-  // Returns { url, id } for the inserted row, or nulls on failure
+  // -------------------- Upload + Insert to Supabase (from original code) --------------------
   async function uploadToSupabase(
     photoUri: string,
     coords: Coords,
@@ -136,29 +114,26 @@ export default function CameraScreen() {
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
       const filePath = `reports/${fileName}`;
 
-      // Convert image to base64 → Uint8Array
       const base64 = await FileSystem.readAsStringAsync(photoUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
       const buffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 
-      // Upload to Supabase Storage (public bucket)
       const { error: storageError } = await supabase.storage
         .from("reports")
         .upload(filePath, buffer, { contentType: "image/jpeg" });
 
       if (storageError) throw storageError;
 
-      // Get public URL
-      const { data: publicUrl } = supabase.storage.from("reports").getPublicUrl(filePath);
+      const { data: publicUrlData } = supabase.storage.from("reports").getPublicUrl(filePath);
+      const publicUrl = publicUrlData.publicUrl;
 
-      // Insert row and return id
       const { data: insertData, error } = await supabase
         .from("reports")
         .insert([
           {
             user_id: userId,
-            image_url: publicUrl.publicUrl,
+            image_url: publicUrl,
             lat: coords.latitude,
             lon: coords.longitude,
             address,
@@ -171,8 +146,8 @@ export default function CameraScreen() {
 
       if (error) throw error;
 
-      console.log("✅ Uploaded & inserted:", publicUrl.publicUrl, insertData?.id);
-      return { url: publicUrl.publicUrl, id: insertData?.id ?? null };
+      console.log("✅ Uploaded & inserted:", publicUrl, insertData?.id);
+      return { url: publicUrl, id: insertData?.id ?? null };
     } catch (err) {
       console.error("❌ Supabase upload/insert failed:", err);
       return { url: null, id: null };
@@ -186,41 +161,17 @@ export default function CameraScreen() {
     setIsUploading(true);
 
     try {
-      // 1) Capture with a delay to avoid the auto-focus issue
-      const photo = await new Promise<any>((resolve, reject) => {
-        setTimeout(async () => {
-          try {
-            if (cameraRef.current) {
-              const photoData = await cameraRef.current.takePictureAsync();
-              resolve(photoData);
-            } else {
-              reject("Camera not ready");
-            }
-          } catch (e) {
-            reject(e);
-          }
-        }, 200); // 👈 Added a 200ms delay
-      });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       console.log("✅ Captured:", photo.uri);
 
-      // 2) Location with cached fallback
       let coords: Coords = { latitude: 0, longitude: 0 };
       try {
-        const lastKnown = await Location.getLastKnownPositionAsync();
-        if (lastKnown) {
-          coords = {
-            latitude: lastKnown.coords.latitude,
-            longitude: lastKnown.coords.longitude,
-          };
-        } else {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-          coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        }
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+        coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       } catch (locErr) {
         console.warn("⚠️ Location fetch failed:", locErr);
       }
 
-      // 3) Reverse geocode
       let address = "Unknown location";
       try {
         const places = await Location.reverseGeocodeAsync(coords);
@@ -232,20 +183,14 @@ export default function CameraScreen() {
         console.warn("⚠️ Reverse geocoding failed:", geoErr);
       }
 
-      // 4) Local quick checks (geofence/time)
       const geo = checkGeofence(coords);
-      const tw = checkTimeWindow();
-
       const preliminary =
         !geo.ok ? { status: "violation", message: "Out of allowed zone" }
-          : !tw.ok ? { status: "violation", message: "Outside allowed time" }
-            : { status: "pending", message: null as string | null };
+          : { status: "pending", message: null as string | null };
 
-      // 5) Get user id
       const { data: userResp } = await supabase.auth.getUser();
       const userId = userResp?.user?.id ?? null;
 
-      // 6) Upload + insert "pending" or local violation, capture row id
       const up = await uploadToSupabase(photo.uri, coords, address, {
         status: preliminary.status,
         message: preliminary.message ?? undefined,
@@ -254,12 +199,11 @@ export default function CameraScreen() {
       const supabaseUrl = up.url;
       const reportId = up.id;
 
-      // 7) Call backend analyze with public URL + qr_value + coords + report_id
       const controller = new AbortController();
       setAbortController(controller);
 
       const formData = new FormData();
-      formData.append("image_url", supabaseUrl ?? ""); // public URL from Storage
+      formData.append("image_url", supabaseUrl ?? "");
       formData.append("lat", coords.latitude.toString());
       formData.append("lon", coords.longitude.toString());
       formData.append("qr_value", qrValue ?? "");
@@ -279,20 +223,22 @@ export default function CameraScreen() {
         console.warn("⚠️ Backend analyze call failed:", e);
       }
 
-      // 8) Final status/message for UI (prefer server verdict; otherwise, success if upload ok and no local violation)
       const serverStatus = data?.status as string | undefined;
       const serverMessage = data?.message as string | undefined;
 
       let finalStatus: string;
       let finalMessage: string;
-
-      if (serverStatus) {
+      
+      // NEW: Prioritize success status if QR is correctly found.
+      if (serverMessage?.includes('✅ QR Found Correctly') && !serverMessage.includes('No billboard detected')) {
+          finalStatus = 'success';
+          finalMessage = serverMessage;
+      } else if (serverStatus) {
         finalStatus = serverStatus;
         finalMessage =
           serverMessage ??
           (serverStatus === "success" ? "Report stored in Supabase" : "Policy violation detected");
       } else {
-        // If server didn't respond, fall back: success if upload worked and not a local violation; else error
         if (preliminary.status === "violation") {
           finalStatus = "violation";
           finalMessage = preliminary.message ?? "Policy violation detected";
@@ -305,7 +251,6 @@ export default function CameraScreen() {
         }
       }
 
-      // 9) Show modal
       setResultData({
         status: finalStatus,
         message: finalMessage,
@@ -330,7 +275,8 @@ export default function CameraScreen() {
       }
     } finally {
       setAbortController(null);
-      setTimeout(() => setIsUploading(false), 1000);
+      setIsUploading(false);
+      setQrValue(null); // Reset QR value after a report
     }
   };
 
@@ -344,13 +290,14 @@ export default function CameraScreen() {
   if (hasPermission === null)
     return (
       <View style={styles.center}>
-        <Text>Requesting camera permissions...</Text>
+        <ActivityIndicator size="large" color="#666" />
+        <Text>Requesting permissions...</Text>
       </View>
     );
   if (hasPermission === false)
     return (
       <View style={styles.center}>
-        <Text>No access to camera</Text>
+        <Text>No access to camera or location</Text>
       </View>
     );
 
@@ -359,43 +306,25 @@ export default function CameraScreen() {
     <View style={styles.container}>
       {isFocused ? (
         <Camera
-          style={StyleSheet.absoluteFillObject} // 👈 Use this to make the camera fill the screen
-          type={CameraType.back}
-          ratio={ratio}
           ref={cameraRef}
-          onCameraReady={onCameraReady}
+          style={StyleSheet.absoluteFillObject}
+          type={CameraType.back}
+          ratio={"16:9"}
+          onCameraReady={() => setIsCameraReady(true)}
+          onBarCodeScanned={scanEnabled ? onBarCodeScanned : undefined}
+          barCodeScannerSettings={{
+            barCodeTypes: ["qr"],
+          }}
         >
-          {/* QR overlay */}
-          {qrPerm && (
-            <View
-              style={{
-                position: "absolute",
-                top: insets.top + 20, // 👈 Use insets to avoid the notch
-                alignSelf: "center",
-                width: 220,
-                height: 120,
-                overflow: "hidden",
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.4)",
-                backgroundColor: "rgba(0,0,0,0.15)",
-              }}
-            >
-              <BarCodeScanner
-                style={{ width: "100%", height: "100%" }}
-                onBarCodeScanned={onBarCodeScanned}
-              />
-            </View>
-          )}
-
-          {/* Capture button */}
-          <View style={[styles.buttonContainer, { bottom: insets.bottom + 20 }]}>
+          {/* Capture button (from your new code) */}
+          <View style={[styles.captureContainer, { bottom: insets.bottom + 20 }]}>
             <TouchableOpacity
-              style={[styles.button, isUploading && { backgroundColor: "gray" }]}
+              style={[styles.captureButton, isUploading && { backgroundColor: "#555" }]}
               onPress={takePicture}
               disabled={isUploading}
             >
-              <Text style={styles.text}>📸 Capture</Text>
+              <Ionicons name="camera" size={28} color="white" />
+              <Text style={styles.captureText}>Capture</Text>
             </TouchableOpacity>
           </View>
         </Camera>
@@ -404,18 +333,26 @@ export default function CameraScreen() {
           <Text>Camera paused</Text>
         </View>
       )}
+
+      {/* QR Scanned Popup (from your new code) */}
+      {scanModalVisible && (
+        <View style={styles.qrPopup}>
+          <Text style={styles.qrPopupText}>✅ QR Scanned!</Text>
+        </View>
+      )}
+
       {/* 🔄 Uploading Overlay */}
       {isUploading && (
         <View style={styles.overlay}>
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.overlayText}>Uploading...</Text>
+          <Text style={styles.overlayText}>Uploading & Analyzing...</Text>
           <TouchableOpacity style={styles.cancelButton} onPress={cancelUpload}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Result Modal */}
+      {/* Result Modal (from original code) */}
       <Modal
         visible={resultModalVisible}
         transparent
@@ -424,24 +361,41 @@ export default function CameraScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
+            {/* UPDATED: Title logic to prioritize QR scan messages */}
             <Text style={styles.modalTitle}>
-              {resultData?.status === "success"
-                ? "✅ Issue Reported"
-                : resultData?.status === "violation"
-                ? "🚫 Violation Detected"
-                : "⚠️ Upload Failed"}
+              {resultData?.message?.includes('Invalid QR format')
+                ? "✅ No Issues Detected"
+                : resultData?.message?.includes('No billboard detected')
+                ? "⚠️ Invalid Image"
+                : "🚫 Violation Detected"}
             </Text>
 
             {resultData?.photoUri && (
               <Image source={{ uri: resultData.photoUri }} style={styles.previewImage} />
             )}
+            
+            {/* NEW: Conditional message for license info based on QR scan, now after the image */}
+            {resultData?.message && (
+              <>
+                {resultData.message.includes('Invalid QR format') && (
+                  <Text style={styles.modalText}>✅ License Information Detected</Text>
+                )}
+                {resultData.message.includes('Missing QR') && (
+                  <Text style={styles.modalText}>🚫 No License Information Detected</Text>
+                )}
+              </>
+            )}
 
-            {/* Display violations as a list */}
-            {resultData?.message && resultData.message.split('; ').map((msg: string, index: number) => (
-              <Text key={index} style={styles.modalText}>
-                {msg.trim()}
-              </Text>
+            {resultData?.message && resultData.message
+              .split('; ')
+              .map((msg: string) => msg.trim())
+              .filter((msg: string) => msg !== "Outside allowed time" && msg !== "✅ QR Found Correctly" && msg !== "Missing QR" && msg !== "Invalid QR format" && msg !== "No license information detected." && msg !== "No billboard detected" && msg !== "Out of allowed zone") // ⬅️ NEW: Added "Out of allowed zone" to the filter list
+              .map((msg: string) => (
+                <Text key={msg} style={styles.modalText}>
+                  {msg}
+                </Text>
             ))}
+
 
             {resultData?.user_id && (
               <Text style={styles.modalText}>User ID: {resultData.user_id}</Text>
@@ -449,17 +403,22 @@ export default function CameraScreen() {
 
             {resultData?.lat != null && resultData?.lon != null && (
               <Text style={styles.modalText}>
-                📍 {resultData.lat}, {resultData.lon}
+                📍 {resultData.lat.toFixed(5)}, {resultData.lon.toFixed(5)}
               </Text>
             )}
 
             {resultData?.address && (
               <Text style={styles.modalText}>🏠 {resultData.address}</Text>
             )}
-
-            {resultData?.supabaseUrl && (
-              <Text style={styles.modalText}>☁️ We Will Get in Touch with the Report</Text>
-            )}
+            
+            {/* NEW: Conditional messages based on heading */}
+            {resultData?.message?.includes('No billboard detected') ? (
+                <Text style={styles.modalText}>☹️ You are supposed to click a Billboard Picture</Text>
+            ) : resultData?.message?.includes('Missing QR') ? (
+                <Text style={styles.modalText}>‼️ Violation Report will be drafted Soon</Text>
+            ) : resultData?.message?.includes('Invalid QR format') ? (
+                <Text style={styles.modalText}>💫 Sorry but there is no issue in the Billboard</Text>
+            ) : null}
 
             <TouchableOpacity
               style={styles.closeButton}
@@ -472,40 +431,44 @@ export default function CameraScreen() {
       </Modal>
     </View>
   );
-
 }
 
-// -------------------- Styles --------------------
+// -------------------- Styles (Merged) --------------------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  buttonContainer: {
-    flex: 1,
-    backgroundColor: "transparent",
-    justifyContent: "flex-end",
-    alignItems: "center",
-  },
-  button: {
-    backgroundColor: "#00000080",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-  text: { fontSize: 18, color: "white" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  captureContainer: {
+    position: "absolute",
+    alignSelf: "center",
+  },
+  captureButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)'
+  },
+  captureText: {
+    color: "white",
+    fontSize: 18,
+    marginLeft: 10,
+    fontWeight: '600'
+  },
 
   overlay: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
     alignItems: "center",
   },
-  overlayText: { marginTop: 10, color: "white", fontSize: 16 },
+  overlayText: { marginTop: 12, color: "white", fontSize: 18, fontWeight: '500' },
   cancelButton: {
-    marginTop: 15,
+    marginTop: 20,
     backgroundColor: "#FF3B30",
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -523,24 +486,44 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 16,
     padding: 20,
-    width: "80%",
+    width: "85%",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-  modalText: { fontSize: 15, marginBottom: 8, textAlign: "center" },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: 'center' },
+  modalText: { fontSize: 15, marginBottom: 8, textAlign: "center", color: '#333' },
   previewImage: {
-    width: 200,
-    height: 300,
+    width: '100%',
+    aspectRatio: 3/4,
     borderRadius: 12,
     marginVertical: 10,
     resizeMode: "cover",
   },
   closeButton: {
-    marginTop: 12,
+    marginTop: 15,
     backgroundColor: "#007AFF",
-    paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
     borderRadius: 10,
   },
-  closeText: { color: "white", fontWeight: "600" },
+  closeText: { color: "white", fontWeight: "bold", fontSize: 16 },
+
+  qrPopup: {
+    position: "absolute",
+    top: "15%",
+    alignSelf: "center",
+    backgroundColor: "rgba(46, 204, 113, 0.9)",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+  },
+  qrPopupText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
 });

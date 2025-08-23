@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <bytecodeTargetLevel>
+      <module name="ad-violation-mobile.app" target="17" />
+      <module name="ad-violation-mobile.expo" target="17" />
+      <module name="ad-violation-mobile.expo-application" target="17" />
+      <module name="ad-violation-mobile.expo-camera" target="17" />
+      <module name="ad-violation-mobile.expo-camera" target="17" />
+      <module name="ad-violation-mobile.expo-constants" target="17" />
+      <module name="ad-violation-mobile.expo-dev-client" target="17" />
+      <module name="ad-violation-mobile.expo-dev-launcher" target="17" />
+      <module name="ad-violation-mobile.expo-dev-menu" target="17" />
+      <module name="ad-violation-mobile.expo-dev-menu-interface" target="17" />
+      <module name="ad-violation-mobile.expo-file-system" target="17" />
+      <module name="ad-violation-mobile.expo-font" target="17" />
+      <module name="ad-violation-mobile.expo-image-loader" target="17" />
+      <module name="ad-violation-mobile.expo-json-utils" target="17" />
+      <module name="ad-violation-mobile.expo-keep-awake" target="17" />
+      <module name="ad-violation-mobile.expo-location" target="17" />
+      <module name="ad-violation-mobile.expo-manifests" target="17" />
+      <module name="ad-violation-mobile.expo-modules-core" target="17" />
+      <module name="ad-violation-mobile.expo-splash-screen" target="17" />
+      <module name="ad-violation-mobile.expo-system-ui" target="17" />
+      <module name="ad-violation-mobile.expo-updates-interface" target="17" />
+      <module name="ad-violation-mobile.expo-web-browser" target="17" />
+      <module name="ad-violation-mobile.react-native-async-storage_async-storage" target="17" />
+      <module name="ad-violation-mobile.react-native-camera" target="17" />
+      <module name="ad-violation-mobile.react-native-gesture-handler" target="17" />
+      <module name="ad-violation-mobile.react-native-safe-area-context" target="17" />
+      <module name="ad-violation-mobile.react-native-screens" target="17" />
+    </bytecodeTargetLevel>
+  </component>
+</project>

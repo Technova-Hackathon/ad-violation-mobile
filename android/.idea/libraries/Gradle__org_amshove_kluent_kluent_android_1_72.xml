@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="Gradle: org.amshove.kluent:kluent-android:1.72" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="org.amshove.kluent" artifactId="kluent-android" version="1.72" baseVersion="1.72" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.amshove.kluent/kluent-android/1.72/c7c68b071dce15c971b4a83f2bdfa1c76cf8e9cd/kluent-android-1.72.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.amshove.kluent/kluent-android/1.72/b2179d383867efcf11316d03bb8872a4b250c5f5/kluent-android-1.72-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.amshove.kluent/kluent-android/1.72/806eb1c449c03ac257e6a8eee401846d9177252/kluent-android-1.72-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
