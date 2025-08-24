@@ -24,7 +24,7 @@ type Coords = { latitude: number; longitude: number };
 
 // -------------------- Geofence CONFIG --------------------
 const GEOFENCE_CENTER = { lat: 20.2961, lon: 85.8245 }; // Approximate: Bhubaneswar, Odisha
-const GEOFENCE_RADIUS_M = 150; // meters
+const GEOFENCE_RADIUS_M = 1500; // meters
 
 // -------------------- Helpers: distance checks --------------------
 function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
@@ -65,7 +65,7 @@ export default function CameraScreen() {
   const [resultModalVisible, setResultModalVisible] = useState(false);
   const [resultData, setResultData] = useState<any>(null);
 
-  // -------------------- QR Scanner (from your new code) --------------------
+  // -------------------- QR Scanner --------------------
   const [scanEnabled, setScanEnabled] = useState(true);
   const [qrValue, setQrValue] = useState<string | null>(null);
   const [scanModalVisible, setScanModalVisible] = useState(false);
@@ -98,7 +98,7 @@ export default function CameraScreen() {
     })();
   }, []);
 
-  // -------------------- Upload + Insert to Supabase (from original code) --------------------
+  // -------------------- Upload + Insert to Supabase --------------------
   async function uploadToSupabase(
     photoUri: string,
     coords: Coords,
@@ -229,7 +229,6 @@ export default function CameraScreen() {
       let finalStatus: string;
       let finalMessage: string;
       
-      // NEW: Prioritize success status if QR is correctly found.
       if (serverMessage?.includes('✅ QR Found Correctly') && !serverMessage.includes('No billboard detected')) {
           finalStatus = 'success';
           finalMessage = serverMessage;
@@ -316,7 +315,7 @@ export default function CameraScreen() {
             barCodeTypes: ["qr"],
           }}
         >
-          {/* Capture button (from your new code) */}
+          {/* Capture button */}
           <View style={[styles.captureContainer, { bottom: insets.bottom + 20 }]}>
             <TouchableOpacity
               style={[styles.captureButton, isUploading && { backgroundColor: "#555" }]}
@@ -334,7 +333,7 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* QR Scanned Popup (from your new code) */}
+      {/* QR Scanned Popup */}
       {scanModalVisible && (
         <View style={styles.qrPopup}>
           <Text style={styles.qrPopupText}>✅ QR Scanned!</Text>
@@ -352,7 +351,7 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* Result Modal (from original code) */}
+      {/* Result Modal */}
       <Modal
         visible={resultModalVisible}
         transparent

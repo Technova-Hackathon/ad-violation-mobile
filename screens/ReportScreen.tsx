@@ -36,13 +36,6 @@ export default function ReportsScreen() {
     const from = pageIndex * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // If you want to show only the signed-in user's reports, uncomment:
-    // const { data: u } = await supabase.auth.getUser();
-    // const userId = u?.user?.id;
-    // let q = supabase.from("reports").select("*").order("created_at", { ascending: false }).range(from, to);
-    // if (userId) q = q.eq("user_id", userId);
-    // const { data, error } = await q;
-
     const { data, error } = await supabase
       .from("reports")
       .select("*")
